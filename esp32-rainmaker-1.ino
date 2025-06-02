@@ -1,4 +1,4 @@
-***************************************************************************************
+/*************************************************************************************************
  *  Created By: Tauseef Ahmad
  *  Created On: 28 May, 2023
  *  
@@ -97,7 +97,7 @@ void write_callback(Device *device, Param *param, const param_val_t val, void *p
     //----------------------------------------------------------------------------------
     if(strcmp(device_name, device1) == 0) {
       
-      Serial.printf("Lightbulb1 = %s\n", val.val.b? "true" : "false");
+      Serial.printf("Lightbulb1 = %s\n", val.val.b? "true" : "false"); }
       
       if(strcmp(param_name, "Power") == 0) {
         //Serial.printf("Received value = %s for %s - %s\n", val.val.b? "true" : "false", device_name, param_name);
@@ -151,8 +151,7 @@ void write_callback(Device *device, Param *param, const param_val_t val, void *p
         //param->updateAndReport(val);
       } 
     }
-    //---------------------------------------------------------------------------------- 
-}
+  
 
 /****************************************************************************************************
  * setup Function
@@ -253,7 +252,7 @@ void setup(){
 }
 
 /****************************************************************************************************
-
+ * loop Function
 *****************************************************************************************************/
 void loop()
 {
@@ -265,23 +264,24 @@ void loop()
     delay(100);
     int startTime = millis();
     while(digitalRead(gpio_reset) == LOW) delay(50);
-    int endTime = millis();
+    int endTime = millis(); }
     //_______________________________________________________________________
     if ((endTime - startTime) > 10000) {
       // If key pressed for more than 10secs, reset all
       Serial.printf("Reset to factory.\n");
       RMakerFactoryReset(2);
-    } 
+    }
     //_______________________________________________________________________
     else if ((endTime - startTime) > 3000) {
       Serial.printf("Reset Wi-Fi.\n");
       // If key pressed for more than 3secs, but less than 10, reset Wi-Fi
       RMakerWiFiReset(2);
-    }
+    
     //_______________________________________________________________________
-  }
+  
   //------------------------------------------------------------------------------
   delay(100);
+    }
   
   if (WiFi.status() != WL_CONNECTED){
     //Serial.println("WiFi Not Connected");
@@ -309,7 +309,7 @@ void button_control(){
     if(button2.isPressed()){
       control_relay(2, RELAY_2, STATE_RELAY_2);
       my_switch2.updateAndReportParam(ESP_RMAKER_DEF_POWER_NAME, STATE_RELAY_2);
-    }
+    
     button3.loop();
     if(button3.isPressed()){
       control_relay(3, RELAY_3, STATE_RELAY_3);
@@ -364,3 +364,4 @@ void remote_control()
         
       IrReceiver.resume();
    }
+}
