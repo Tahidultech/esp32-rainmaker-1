@@ -1,316 +1,189 @@
-#include "RMaker.h"
-#include "WiFi.h"
-#include "WiFiProv.h"
+#include <WiFi.h>
+#include <esp_wifi.h>
+#include <ESPmDNS.h>
+#include <ArduinoOTA.h>
 #include <EEPROM.h>
-#include <ezButton.h>
 #include <IRremote.h>
+#include <ezButton.h>
+#include <esp_rainmaker.h>
+#include <WiFiProv.h>
 
-//---------------------------------------------------
-const char *service_name = "Ahmad_Logs";
-const char *pop = "12345678";
-//---------------------------------------------------
-#define EEPROM_SIZE 4
-const byte IR_RECEIVE_PIN = 14;
-//---------------------------------------------------
-// define the Device Names
-char device1[] = "Switch1";
-char device2[] = "Switch2";
-char device3[] = "Switch3";
-char device4[] = "Switch4";
-//---------------------------------------------------
-// define the GPIO connected with Relays and switches
-static uint8_t RELAY_1 = 5;   // D23
-static uint8_t RELAY_2 = 18;  // D22
-static uint8_t RELAY_3 = 19;  // D21
-static uint8_t RELAY_4 = 21;  // D19
-//---------------------------------------------------
-ezButton button1(34);
-ezButton button2(35);
-ezButton button3(32);
-ezButton button4(33);
-//---------------------------------------------------
-static uint8_t WIFI_LED = 2;   // D2
-static uint8_t gpio_reset = 0;
-//---------------------------------------------------
-// Relay State
-bool STATE_RELAY_1 = LOW;
-bool STATE_RELAY_2 = LOW;
-bool STATE_RELAY_3 = LOW;
-bool STATE_RELAY_4 = LOW;
-//---------------------------------------------------
-static Switch my_switch1(device1, &RELAY_1);
-static Switch my_switch2(device2, &RELAY_2);
-static Switch my_switch3(device3, &RELAY_3);
-static Switch my_switch4(device4, &RELAY_4);
-//---------------------------------------------------
+// GPIO assignments
+#define RELAY_LIGHT1 4
+#define RELAY_LIGHT2 5
+#define RELAY_LIGHT3 18
+#define RELAY_FAN    19
+#define FAN_SPEED_UP 21
+#define FAN_SPEED_DN 22
+#define BUTTON1 23
+#define BUTTON2 25
+#define BUTTON3 26
+#define BUTTON4 27
+#define BUTTON5 32
+#define BUTTON6 33
+#define LDR_PIN 34
+#define IR_RECEIVE_PIN 14
 
-void sysProvEvent(arduino_event_t *sys_event)
-{
-  switch (sys_event->event_id)
-  {
-  case ARDUINO_EVENT_PROV_START:
-#if CONFIG_IDF_TARGET_ESP32
-    Serial.printf("\nProvisioning Started with name \"%s\" and PoP \"%s\" on BLE\n", service_name, pop);
-    printQR(service_name, pop, "ble");
-#else
-    Serial.printf("\nProvisioning Started with name \"%s\" and PoP \"%s\" on SoftAP\n", service_name, pop);
-    printQR(service_name, pop, "softap");
-#endif
-    break;
-  case ARDUINO_EVENT_WIFI_STA_CONNECTED:
-    Serial.printf("\nConnected to Wi-Fi!\n");
-    digitalWrite(WIFI_LED, HIGH);
-    break;
-  }
+// EEPROM
+#define EEPROM_SIZE 10
+
+// Relay state variables
+bool light1 = false, light2 = false, light3 = false, fan = true;
+
+// IR
+IRrecv irrecv(IR_RECEIVE_PIN);
+
+// Buttons
+ezButton button1(BUTTON1);
+ezButton button2(BUTTON2);
+ezButton button3(BUTTON3);
+ezButton button4(BUTTON4);
+ezButton button5(BUTTON5);
+ezButton button6(BUTTON6);
+
+// RainMaker parameters
+static Switch *switch_light1, *switch_light2, *switch_light3, *switch_fan;
+
+// Function to save state
+void saveStateToEEPROM() {
+  EEPROM.write(0, light1);
+  EEPROM.write(1, light2);
+  EEPROM.write(2, light3);
+  EEPROM.write(3, fan);
+  EEPROM.commit();
 }
 
-//---------------------------------------------------
-void write_callback(Device *device, Param *param, const param_val_t val, void *priv_data, write_ctx_t *ctx)
-{
-  const char *device_name = device->getDeviceName();
+// Function to load state
+void loadStateFromEEPROM() {
+  light1 = EEPROM.read(0);
+  light2 = EEPROM.read(1);
+  light3 = EEPROM.read(2);
+  fan = EEPROM.read(3);
+}
+
+// Relay control
+void setRelays() {
+  digitalWrite(RELAY_LIGHT1, light1);
+  digitalWrite(RELAY_LIGHT2, light2);
+  digitalWrite(RELAY_LIGHT3, light3);
+  digitalWrite(RELAY_FAN, fan);
+}
+
+// Fan speed control (simple pulse)
+void fanSpeedUp() {
+  digitalWrite(FAN_SPEED_UP, HIGH);
+  delay(200);
+  digitalWrite(FAN_SPEED_UP, LOW);
+}
+void fanSpeedDown() {
+  digitalWrite(FAN_SPEED_DN, HIGH);
+  delay(200);
+  digitalWrite(FAN_SPEED_DN, LOW);
+}
+
+// RainMaker write callback
+void write_callback(Device *dev, param_t *param, const esp_rmaker_param_val_t val, void *priv) {
+  const char *device_name = dev->getDeviceName();
   const char *param_name = param->getParamName();
 
-  if (strcmp(device_name, device1) == 0)
-  {
-    Serial.printf("Lightbulb1 = %s\n", val.val.b ? "true" : "false");
-    if (strcmp(param_name, "Power") == 0)
-    {
-      STATE_RELAY_1 = val.val.b;
-      STATE_RELAY_1 = !STATE_RELAY_1;
-      control_relay(1, RELAY_1, STATE_RELAY_1);
-    }
+  if (strcmp(device_name, "Light1") == 0 && strcmp(param_name, "Power") == 0) {
+    light1 = val.val.b;
+    digitalWrite(RELAY_LIGHT1, light1);
+  } else if (strcmp(device_name, "Light2") == 0 && strcmp(param_name, "Power") == 0) {
+    light2 = val.val.b;
+    digitalWrite(RELAY_LIGHT2, light2);
+  } else if (strcmp(device_name, "Light3") == 0 && strcmp(param_name, "Power") == 0) {
+    light3 = val.val.b;
+    digitalWrite(RELAY_LIGHT3, light3);
+  } else if (strcmp(device_name, "Fan") == 0 && strcmp(param_name, "Power") == 0) {
+    fan = val.val.b;
+    digitalWrite(RELAY_FAN, fan);
   }
-  else if (strcmp(device_name, device2) == 0)
-  {
-    Serial.printf("Switch value = %s\n", val.val.b ? "true" : "false");
-    if (strcmp(param_name, "Power") == 0)
-    {
-      STATE_RELAY_2 = val.val.b;
-      STATE_RELAY_2 = !STATE_RELAY_2;
-      control_relay(2, RELAY_2, STATE_RELAY_2);
-    }
-  }
-  else if (strcmp(device_name, device3) == 0)
-  {
-    Serial.printf("Switch value = %s\n", val.val.b ? "true" : "false");
-    if (strcmp(param_name, "Power") == 0)
-    {
-      STATE_RELAY_3 = val.val.b;
-      STATE_RELAY_3 = !STATE_RELAY_3;
-      control_relay(3, RELAY_3, STATE_RELAY_3);
-    }
-  }
-  else if (strcmp(device_name, device4) == 0)
-  {
-    Serial.printf("Switch value = %s\n", val.val.b ? "true" : "false");
-    if (strcmp(param_name, "Power") == 0)
-    {
-      STATE_RELAY_4 = val.val.b;
-      STATE_RELAY_4 = !STATE_RELAY_4;
-      control_relay(4, RELAY_4, STATE_RELAY_4);
-    }
-  }
+
+  saveStateToEEPROM();
+  dev->updateParam(param, val);
 }
 
-//---------------------------------------------------
-void setup()
-{
-  uint32_t chipId = 0;
+void setup() {
   Serial.begin(115200);
-
   EEPROM.begin(EEPROM_SIZE);
-  IrReceiver.begin(IR_RECEIVE_PIN);
+  loadStateFromEEPROM();
 
-  pinMode(RELAY_1, OUTPUT);
-  pinMode(RELAY_2, OUTPUT);
-  pinMode(RELAY_3, OUTPUT);
-  pinMode(RELAY_4, OUTPUT);
+  // Relay GPIOs
+  pinMode(RELAY_LIGHT1, OUTPUT);
+  pinMode(RELAY_LIGHT2, OUTPUT);
+  pinMode(RELAY_LIGHT3, OUTPUT);
+  pinMode(RELAY_FAN, OUTPUT);
+  pinMode(FAN_SPEED_UP, OUTPUT);
+  pinMode(FAN_SPEED_DN, OUTPUT);
 
-  button1.setDebounceTime(100);
-  button2.setDebounceTime(100);
-  button3.setDebounceTime(100);
-  button4.setDebounceTime(100);
+  // IR
+  irrecv.enableIRIn();
 
-  pinMode(gpio_reset, INPUT);
-  pinMode(WIFI_LED, OUTPUT);
-  digitalWrite(WIFI_LED, LOW);
+  // Buttons
+  button1.setDebounceTime(50);
+  button2.setDebounceTime(50);
+  button3.setDebounceTime(50);
+  button4.setDebounceTime(50);
+  button5.setDebounceTime(50);
+  button6.setDebounceTime(50);
 
-  digitalWrite(RELAY_1, !STATE_RELAY_1);
-  digitalWrite(RELAY_2, !STATE_RELAY_2);
-  digitalWrite(RELAY_3, !STATE_RELAY_3);
-  digitalWrite(RELAY_4, !STATE_RELAY_4);
+  setRelays();
 
-  Node my_node = RMaker.initNode("Ahmad_Logs");
+  // OTA setup
+  ArduinoOTA.begin();
 
-  my_switch1.addCb(write_callback);
-  my_switch2.addCb(write_callback);
-  my_switch3.addCb(write_callback);
-  my_switch4.addCb(write_callback);
+  // RainMaker
+  Node node;
+  node = Node::createNode("ESP32-Node", "Switch");
 
-  my_node.addDevice(my_switch1);
-  my_node.addDevice(my_switch2);
-  my_node.addDevice(my_switch3);
-  my_node.addDevice(my_switch4);
+  switch_light1 = new Switch("Light1", &light1);
+  switch_light2 = new Switch("Light2", &light2);
+  switch_light3 = new Switch("Light3", &light3);
+  switch_fan    = new Switch("Fan", &fan);
 
-  RMaker.enableOTA(OTA_USING_PARAMS);
-  RMaker.enableTZService();
-  RMaker.enableSchedule();
+  switch_light1->addCb(write_callback);
+  switch_light2->addCb(write_callback);
+  switch_light3->addCb(write_callback);
+  switch_fan->addCb(write_callback);
 
-  for (int i = 0; i < 17; i = i + 8)
-  {
-    chipId |= ((ESP.getEfuseMac() >> (40 - i)) & 0xff) << i;
-  }
+  node.addDevice(switch_light1);
+  node.addDevice(switch_light2);
+  node.addDevice(switch_light3);
+  node.addDevice(switch_fan);
 
-  Serial.printf("\nChip ID:  %d Service Name: %s\n", chipId, service_name);
-  Serial.printf("\nStarting ESP-RainMaker\n");
+  esp_rmaker_node_init(&node);
+  esp_rmaker_start();
 
-  RMaker.start();
-  WiFi.onEvent(sysProvEvent);
-
-#if CONFIG_IDF_TARGET_ESP32
-  WiFiProv.beginProvision(WIFI_PROV_SCHEME_BLE, WIFI_PROV_SCHEME_HANDLER_FREE_BTDM, WIFI_PROV_SECURITY_1, pop, service_name);
-#else
-  WiFiProv.beginProvision(WIFI_PROV_SCHEME_SOFTAP, WIFI_PROV_SCHEME_HANDLER_NONE, WIFI_PROV_SECURITY_1, pop, service_name);
-#endif
-
-  STATE_RELAY_1 = EEPROM.read(0);
-  STATE_RELAY_2 = EEPROM.read(1);
-  STATE_RELAY_3 = EEPROM.read(2);
-  STATE_RELAY_4 = EEPROM.read(3);
-
-  digitalWrite(RELAY_1, STATE_RELAY_1);
-  digitalWrite(RELAY_2, STATE_RELAY_2);
-  digitalWrite(RELAY_3, STATE_RELAY_3);
-  digitalWrite(RELAY_4, STATE_RELAY_4);
-
-  my_switch1.updateAndReportParam(ESP_RMAKER_DEF_POWER_NAME, STATE_RELAY_1);
-  my_switch2.updateAndReportParam(ESP_RMAKER_DEF_POWER_NAME, STATE_RELAY_2);
-  my_switch3.updateAndReportParam(ESP_RMAKER_DEF_POWER_NAME, STATE_RELAY_3);
-  my_switch4.updateAndReportParam(ESP_RMAKER_DEF_POWER_NAME, STATE_RELAY_4);
-
-  Serial.printf("Relay1 is %s \n", STATE_RELAY_1 ? "ON" : "OFF");
-  Serial.printf("Relay2 is %s \n", STATE_RELAY_2 ? "ON" : "OFF");
-  Serial.printf("Relay3 is %s \n", STATE_RELAY_3 ? "ON" : "OFF");
-  Serial.printf("Relay4 is %s \n", STATE_RELAY_4 ? "ON" : "OFF");
+  // Provisioning
+  const char *service_name = "PROV_ESP32";
+  const char *pop = "123456";
+  WiFiProv.beginProvision(NETWORK_PROV_SCHEME_BLE, NETWORK_PROV_SCHEME_HANDLER_FREE_BTDM, NETWORK_PROV_SECURITY_1, pop, service_name);
 }
 
-//---------------------------------------------------
-void loop()
-{
-  if (digitalRead(gpio_reset) == LOW)
-  {
-    Serial.printf("Reset Button Pressed!\n");
-    delay(100);
-    int startTime = millis();
-    while (digitalRead(gpio_reset) == LOW)
-      delay(50);
-    int endTime = millis();
+void loop() {
+  ArduinoOTA.handle();
 
-    if ((endTime - startTime) > 10000)
-    {
-      Serial.printf("Reset to factory.\n");
-      RMakerFactoryReset(2);
-    }
-    else if ((endTime - startTime) > 3000)
-    {
-      Serial.printf("Reset Wi-Fi.\n");
-      RMakerWiFiReset(2);
-    }
+  button1.loop();
+  button2.loop();
+  button3.loop();
+  button4.loop();
+  button5.loop();
+  button6.loop();
+
+  if (button1.isPressed()) { light1 = !light1; digitalWrite(RELAY_LIGHT1, light1); switch_light1->updateAndReportParam(ESP_RMAKER_DEF_POWER_NAME, light1); }
+  if (button2.isPressed()) { light2 = !light2; digitalWrite(RELAY_LIGHT2, light2); switch_light2->updateAndReportParam(ESP_RMAKER_DEF_POWER_NAME, light2); }
+  if (button3.isPressed()) { light3 = !light3; digitalWrite(RELAY_LIGHT3, light3); switch_light3->updateAndReportParam(ESP_RMAKER_DEF_POWER_NAME, light3); }
+  if (button4.isPressed()) { fan = !fan; digitalWrite(RELAY_FAN, fan); switch_fan->updateAndReportParam(ESP_RMAKER_DEF_POWER_NAME, fan); }
+  if (button5.isPressed()) fanSpeedUp();
+  if (button6.isPressed()) fanSpeedDown();
+
+  if (irrecv.decode()) {
+    String ir_code = String(irrecv.decodedIRData.command, HEX);
+    Serial.println("IR Code: " + ir_code);
+    // You can map your IR codes here
+    irrecv.resume();
   }
 
   delay(100);
-
-  if (WiFi.status() != WL_CONNECTED)
-  {
-    digitalWrite(WIFI_LED, LOW);
-  }
-  else
-  {
-    digitalWrite(WIFI_LED, HIGH);
-  }
-
-  button_control();
-  remote_control();
-}
-
-//---------------------------------------------------
-void button_control()
-{
-  button1.loop();
-  if (button1.isPressed())
-  {
-    control_relay(1, RELAY_1, STATE_RELAY_1);
-    my_switch1.updateAndReportParam(ESP_RMAKER_DEF_POWER_NAME, STATE_RELAY_1);
-  }
-
-  button2.loop();
-  if (button2.isPressed())
-  {
-    control_relay(2, RELAY_2, STATE_RELAY_2);
-    my_switch2.updateAndReportParam(ESP_RMAKER_DEF_POWER_NAME, STATE_RELAY_2);
-  }
-
-  button3.loop();
-  if (button3.isPressed())
-  {
-    control_relay(3, RELAY_3, STATE_RELAY_3);
-    my_switch3.updateAndReportParam(ESP_RMAKER_DEF_POWER_NAME, STATE_RELAY_3);
-  }
-
-  button4.loop();
-  if (button4.isPressed())
-  {
-    control_relay(4, RELAY_4, STATE_RELAY_4);
-    my_switch4.updateAndReportParam(ESP_RMAKER_DEF_POWER_NAME, STATE_RELAY_4);
-  }
-}
-
-//---------------------------------------------------
-void control_relay(int relay_no, int relay_pin, boolean &status)
-{
-  status = !status;
-  digitalWrite(relay_pin, status);
-  EEPROM.write(relay_no - 1, status);
-  EEPROM.commit();
-  String text = (status) ? "ON" : "OFF";
-  Serial.println("Relay" + String(relay_no) + " is " + text);
-}
-
-//---------------------------------------------------
-void remote_control()
-{
-  if (IrReceiver.decode())
-  {
-    String ir_code = String(IrReceiver.decodedIRData.command, HEX);
-    if (ir_code.equals("0"))
-    {
-      IrReceiver.resume();
-      return;
-    }
-
-    Serial.println(ir_code);
-
-    if (ir_code == "c")
-    {
-      control_relay(1, RELAY_1, STATE_RELAY_1);
-      my_switch1.updateAndReportParam(ESP_RMAKER_DEF_POWER_NAME, STATE_RELAY_1);
-    }
-    else if (ir_code == "18")
-    {
-      control_relay(2, RELAY_2, STATE_RELAY_2);
-      my_switch2.updateAndReportParam(ESP_RMAKER_DEF_POWER_NAME, STATE_RELAY_2);
-    }
-    else if (ir_code == "5e")
-    {
-      control_relay(3, RELAY_3, STATE_RELAY_3);
-      my_switch3.updateAndReportParam(ESP_RMAKER_DEF_POWER_NAME, STATE_RELAY_3);
-    }
-    else if (ir_code == "8")
-    {
-      control_relay(4, RELAY_4, STATE_RELAY_4);
-      my_switch4.updateAndReportParam(ESP_RMAKER_DEF_POWER_NAME, STATE_RELAY_4);
-    }
-
-    IrReceiver.resume();
-  }
 }
