@@ -5,7 +5,7 @@
 #include <EEPROM.h>
 #include <IRremote.h>
 #include <ezButton.h>
-#include <esp_rainmaker.h>
+#include <Rmaker.h>
 #include <WiFiProv.h>
 
 // GPIO assignments
