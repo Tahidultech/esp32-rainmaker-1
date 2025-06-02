@@ -96,9 +96,9 @@ void write_callback(Device *device, Param *param, const param_val_t val, void *p
     const char *param_name = param->getParamName();
     //----------------------------------------------------------------------------------
     if(strcmp(device_name, device1) == 0) {
-      
+
       Serial.printf("Lightbulb1 = %s\n", val.val.b? "true" : "false"); }
-      
+
       if(strcmp(param_name, "Power") == 0) {
         //Serial.printf("Received value = %s for %s - %s\n", val.val.b? "true" : "false", device_name, param_name);
         STATE_RELAY_1 = val.val.b;
@@ -110,7 +110,7 @@ void write_callback(Device *device, Param *param, const param_val_t val, void *p
     }
     //----------------------------------------------------------------------------------
     else if(strcmp(device_name, device2) == 0) {
-      
+
       Serial.printf("Switch value = %s\n", val.val.b? "true" : "false");
 
       if(strcmp(param_name, "Power") == 0) {
@@ -124,7 +124,7 @@ void write_callback(Device *device, Param *param, const param_val_t val, void *p
     }
     //----------------------------------------------------------------------------------
     else if(strcmp(device_name, device3) == 0) {
-      
+
       Serial.printf("Switch value = %s\n", val.val.b? "true" : "false");
 
       if(strcmp(param_name, "Power") == 0) {
@@ -135,11 +135,11 @@ void write_callback(Device *device, Param *param, const param_val_t val, void *p
         //(STATE_RELAY_3 == false) ? digitalWrite(RELAY_3, HIGH) : digitalWrite(RELAY_3, LOW);
         //param->updateAndReport(val);
       }
-  
+
     }
     //----------------------------------------------------------------------------------
     else if(strcmp(device_name, device4) == 0) {
-      
+
       Serial.printf("Switch value = %s\n", val.val.b? "true" : "false");
 
       if(strcmp(param_name, "Power") == 0) {
@@ -151,7 +151,7 @@ void write_callback(Device *device, Param *param, const param_val_t val, void *p
         //param->updateAndReport(val);
       } 
     }
-  
+
 
 /****************************************************************************************************
  * setup Function
@@ -233,12 +233,12 @@ void setup(){
   STATE_RELAY_2 = EEPROM.read(1);
   STATE_RELAY_3 = EEPROM.read(2);
   STATE_RELAY_4 = EEPROM.read(3);
-  
+
   digitalWrite(RELAY_1, STATE_RELAY_1);
   digitalWrite(RELAY_2, STATE_RELAY_2);
   digitalWrite(RELAY_3, STATE_RELAY_3);
   digitalWrite(RELAY_4, STATE_RELAY_4);
-  
+
   my_switch1.updateAndReportParam(ESP_RMAKER_DEF_POWER_NAME, STATE_RELAY_1);
   my_switch2.updateAndReportParam(ESP_RMAKER_DEF_POWER_NAME, STATE_RELAY_2);
   my_switch3.updateAndReportParam(ESP_RMAKER_DEF_POWER_NAME, STATE_RELAY_3);
@@ -276,13 +276,13 @@ void loop()
       Serial.printf("Reset Wi-Fi.\n");
       // If key pressed for more than 3secs, but less than 10, reset Wi-Fi
       RMakerWiFiReset(2);
-    
+
     //_______________________________________________________________________
-  
+
   //------------------------------------------------------------------------------
   delay(100);
     }
-  
+
   if (WiFi.status() != WL_CONNECTED){
     //Serial.println("WiFi Not Connected");
     digitalWrite(WIFI_LED, LOW);
@@ -309,7 +309,7 @@ void button_control(){
     if(button2.isPressed()){
       control_relay(2, RELAY_2, STATE_RELAY_2);
       my_switch2.updateAndReportParam(ESP_RMAKER_DEF_POWER_NAME, STATE_RELAY_2);
-    
+
     button3.loop();
     if(button3.isPressed()){
       control_relay(3, RELAY_3, STATE_RELAY_3);
@@ -342,9 +342,9 @@ void remote_control()
    if (IrReceiver.decode()) {
       String ir_code = String(IrReceiver.decodedIRData.command, HEX);
       if(ir_code.equals("0")) {IrReceiver.resume();return; }
-      
+
       Serial.println(ir_code);
-      
+
       if(ir_code == "c"){
         control_relay(1, RELAY_1, STATE_RELAY_1);
         my_switch1.updateAndReportParam(ESP_RMAKER_DEF_POWER_NAME, STATE_RELAY_1);
@@ -361,7 +361,7 @@ void remote_control()
         control_relay(4, RELAY_4, STATE_RELAY_4);
         my_switch4.updateAndReportParam(ESP_RMAKER_DEF_POWER_NAME, STATE_RELAY_4);
       }
-        
+
       IrReceiver.resume();
    }
 }
