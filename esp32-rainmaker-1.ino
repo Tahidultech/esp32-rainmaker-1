@@ -5,7 +5,7 @@
 #include <EEPROM.h>
 #include <IRremote.h>
 #include <ezButton.h>
-#include <Rmaker.h>
+#include <RMaker.h>
 #include <WiFiProv.h>
 
 // GPIO assignments
